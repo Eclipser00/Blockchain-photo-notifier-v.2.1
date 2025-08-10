@@ -1,9 +1,7 @@
 # brownie-config.yaml
 # Colócalo en la raíz del proyecto Brownie, junto a contracts/, scripts/, tests/
 
-# Claves y variables directamente aquí (no subir a repositorios públicos)
-private_key: "TU_CLAVE_PRIVADA"
-infura_project_id: "TU_INFURA_PROJECT_ID"
+dotenv: .env
 
 compiler:
   solc:
