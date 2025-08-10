@@ -14,6 +14,7 @@ compiler:
 
 networks:
   development:
+    gas_price: 2000000000
     host: http://127.0.0.1:8545
     chainid: 1337
 
