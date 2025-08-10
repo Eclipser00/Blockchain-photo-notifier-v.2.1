@@ -3,6 +3,10 @@ import pytest
 from brownie import accounts
 from hexbytes import HexBytes
 
+@pytest.fixture(scope="module")
+def c(PhotoRegistry, accounts):
+    return PhotoRegistry.deploy({"from": accounts[0]})
+
 def test_bulk_anchors_and_transfers(c):
     """Simula varias transacciones encadenadas: múltiples anchors y transfers."""
     a, b = accounts[0], accounts[1]
