@@ -3,3 +3,7 @@ eth-brownie==1.19.5
 eth-abi==2.2.0
 kivy==2.1.0
 web3==5.31.3
+plyer==2.1.0
+typing-extensions==4.4.0
+eth-utils==1.10.1
+eth-typing==2.3.0
