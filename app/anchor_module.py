@@ -106,6 +106,31 @@ class AnchorService:
             "registered": registered
         }
 
+    def transfer_by_file(self, file_path: str, new_owner: str) -> dict:
+        if not self.cfg.private_key:
+            raise RuntimeError("No hay private_key configurada (solo dev).")
+        if not (new_owner.startswith("0x") and len(new_owner) == 42):
+            raise RuntimeError("Dirección destino inválida")
+
+        hexd = sha256_file(file_path)
+        h32 = "0x" + hexd
+        from eth_account import Account
+        acct = Account.from_key(self.cfg.private_key)
+
+        tx = self.contract.functions.transferOwner(h32, new_owner).build_transaction({
+            "from": acct.address,
+            "nonce": self.w3.eth.get_transaction_count(acct.address),
+            "gas": self.cfg.gas,
+            "chainId": self.cfg.chain_id
+        })
+        if self.cfg.gas_price_gwei is not None:
+            tx["gasPrice"] = self.w3.to_wei(self.cfg.gas_price_gwei, "gwei")
+
+        signed = acct.sign_transaction(tx)
+        txh = self.w3.eth.send_raw_transaction(signed.rawTransaction)
+        receipt = self.w3.eth.wait_for_transaction_receipt(txh)
+        return {"fileHash": h32, "to": new_owner, "txHash": txh.hex(), "block": receipt.blockNumber}
+
 # ---------------------------
 # UI Kivy lista para integrar
 # ---------------------------
@@ -157,6 +182,14 @@ class AnchorWidget(BoxLayout):
         btn_anchor = Button(text="Anclar (Ganache)", size_hint_y=None, height=48)
         btn_anchor.bind(on_release=lambda *_: self._anchor_async())
 
+        self.dest_input = TextInput(
+            text="",
+            hint_text="0x... dirección destinatario para transferir",
+            size_hint_y=None, height=44
+        )
+        btn_transfer = Button(text="Transferir propiedad", size_hint_y=None, height=48)
+        btn_transfer.bind(on_release=lambda *_: self._transfer_async())
+
         btn_verify = Button(text="Verificar", size_hint_y=None, height=48)
         btn_verify.bind(on_release=lambda *_: self._verify_async())
 
@@ -171,6 +204,8 @@ class AnchorWidget(BoxLayout):
         self.add_widget(self.lbl_hash)
         self.add_widget(btn_hash)
         self.add_widget(btn_anchor)
+        self.add_widget(self.dest_input)
+        self.add_widget(btn_transfer)
         self.add_widget(btn_verify)
         self.add_widget(self.lbl_status)
 
@@ -240,6 +275,31 @@ class AnchorWidget(BoxLayout):
             Clock.schedule_once(lambda *_: self._set_status(f"[color=5cb85c]✓ Anclado: {msg}[/color]"))
         except Exception as e:
             Clock.schedule_once(lambda *_: self._set_status(f"[color=ff5555]Error anclando: {e}[/color]"))
+
+    def _transfer_async(self):
+        if not self.service:
+            self._set_status("[color=ffae42]Conecta el contrato primero[/color]")
+            return
+        if not self.selected_path:
+            self._set_status("[color=ffae42]Elige un archivo primero[/color]")
+            return
+        to = self.dest_input.text.strip()
+        if not (to.startswith("0x") and len(to) == 42):
+            self._set_status("[color=ffae42]Dirección destino inválida[/color]")
+            return
+        self._set_status("[color=aaaaaa]Transfiriendo…[/color]")
+        import threading
+        threading.Thread(target=self._transfer_thread, args=(to,), daemon=True).start()
+
+    def _transfer_thread(self, to_addr: str):
+        try:
+            res = self.service.transfer_by_file(self.selected_path, to_addr)
+            msg = f"[b]HASH[/b] {res['fileHash']}  [b]TO[/b] {res['to']}  [b]TX[/b] {res['txHash']}  [b]BLK[/b] {res['block']}"
+            from kivy.clock import Clock
+            Clock.schedule_once(lambda *_: self._set_status(f"[color=5cb85c]✓ Transferido: {msg}[/color]"))
+        except Exception as e:
+            from kivy.clock import Clock
+            Clock.schedule_once(lambda *_: self._set_status(f"[color=ff5555]Error transfiriendo: {e}[/color]"))
 
     def _verify_async(self):
         if not self.service:
