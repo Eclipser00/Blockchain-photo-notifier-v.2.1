@@ -18,7 +18,7 @@ class AnchorWidget(BoxLayout):
         self.selected_path = None
         self.current_hash = None
 
-        self.addr_input = TextInput(text=self.cfg.contract_address or "", hint_text="0x... contrato", size_hint_y=None, height=44)
+        self.addr_input = TextInput(text=self.cfg.contract_address.strip() or "", hint_text="0x... contrato", size_hint_y=None, height=44)
         self.rpc_label = Label(text=f"[b]RPC:[/b] {self.cfg.rpc_url}", markup=True, size_hint_y=None, height=24)
 
         btn_connect = Button(text="Conectar contrato", size_hint_y=None, height=48)

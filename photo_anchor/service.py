@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from typing import Optional, Dict, Any
 from web3 import Web3
 from eth_account import Account
+from hexbytes import HexBytes
 
 DEFAULT_RPC = "http://127.0.0.1:8545"
 DEFAULT_CHAIN_ID = 1337
@@ -36,9 +37,25 @@ class AnchorService:
         self.w3 = Web3(Web3.HTTPProvider(cfg.rpc_url))
         if not self.w3.isConnected():
             raise RuntimeError(f"No se pudo conectar a RPC: {cfg.rpc_url}")
+
+        # Dirección del contrato
+        addr = Web3.toChecksumAddress(cfg.contract_address.strip())
+
+        # VALIDAR: debe haber bytecode (rechaza cuentas EOA)
+        code = self.w3.eth.get_code(addr)
+        if code in (b"", b"\x00", HexBytes("0x")):
+            raise RuntimeError(
+                "La dirección NO es un contrato (sin bytecode). Usa la dirección del contrato desplegado.")
+
+        # Cargar ABI
+        abi_path = os.getenv("PHOTO_ABI_PATH", "Contract/build/contracts/PhotoRegistry.json")
+        with open(abi_path, "r") as f:
+            contract_json = json.load(f)
+        abi = contract_json["abi"]
+
         self.contract = self.w3.eth.contract(
-            address=cfg.contract_address,
-            abi=load_abi(cfg.abi_path)
+            address=addr,
+            abi=abi
         )
 
     def anchor(self, file_path: str):

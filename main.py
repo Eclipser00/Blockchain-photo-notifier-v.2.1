@@ -3,8 +3,8 @@ from kivy.app import App
 
 # 1) Cargar .env ANTES de leer variables
 try:
-    from dotenv import load_dotenv
-    load_dotenv()
+    from dotenv import load_dotenv, find_dotenv
+    load_dotenv(find_dotenv())
 except Exception:
     pass  # si no usas python-dotenv, ignora
 
@@ -19,6 +19,7 @@ class Demo(App):
         abi_path = os.getenv("PHOTO_ABI_PATH", "Contract/build/contracts/PhotoRegistry.json").strip()
         dev_pk = (os.getenv("DEV_PRIVATE_KEY") or "").strip()
         chain_id_str = os.getenv("PHOTO_CHAIN_ID", "1337").strip()
+        print(f"[CFG] CONTRACT={contract_addr}  ABI={abi_path}")
 
         # 3) Convertir chain_id de forma segura
         try:
