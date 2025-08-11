@@ -34,7 +34,7 @@ class AnchorService:
     def __init__(self, cfg: AnchorConfig):
         self.cfg = cfg
         self.w3 = Web3(Web3.HTTPProvider(cfg.rpc_url))
-        if not self.w3.is_connected():
+        if not self.w3.isConnected():
             raise RuntimeError(f"No se pudo conectar a RPC: {cfg.rpc_url}")
         self.contract = self.w3.eth.contract(
             address=cfg.contract_address,

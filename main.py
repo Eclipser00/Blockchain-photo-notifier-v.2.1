@@ -8,15 +8,15 @@ try:
 except Exception:
     pass  # si no usas python-dotenv, ignora
 
-from anchor_module import AnchorWidget
+from photo_anchor.ui import AnchorWidget
 from photo_anchor.service import AnchorConfig  # o desde donde tengas AnchorConfig
 
 class Demo(App):
     def build(self):
         # 2) Leer y LIMPIAR (strip) las variables de entorno
         rpc_url = os.getenv("PHOTO_RPC", "http://127.0.0.1:8545").strip()
-        contract_addr = os.getenv("PHOTO_REGISTRY_ADDR", "0x44a83C3C87B76bB8E120BE7e14137953659A310b").strip()
-        abi_path = os.getenv("PHOTO_ABI_PATH", "build/contracts/PhotoRegistry.json").strip()
+        contract_addr = os.getenv("PHOTO_REGISTRY_ADDR", "").strip()
+        abi_path = os.getenv("PHOTO_ABI_PATH", "Contract/build/contracts/PhotoRegistry.json").strip()
         dev_pk = (os.getenv("DEV_PRIVATE_KEY") or "").strip()
         chain_id_str = os.getenv("PHOTO_CHAIN_ID", "1337").strip()
 
