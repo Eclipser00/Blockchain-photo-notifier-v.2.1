@@ -49,7 +49,7 @@ class AnchorWidget(BoxLayout):
                   btn_hash, btn_anchor, self.dest_input, btn_transfer, btn_verify, self.lbl_status]:
             self.add_widget(w)
 
-    # --- helpers UI (idénticos a los que ya tienes) ---
+    # --- helpers UI ---
     def _connect(self, *_):
         addr = self.addr_input.text.strip()
         if not (addr.startswith("0x") and len(addr) == 42):
@@ -88,7 +88,7 @@ class AnchorWidget(BoxLayout):
             self.current_hash = hexd
             Clock.schedule_once(lambda *_: self._set_hash_ok(hexd))
         except Exception as e:
-            Clock.schedule_once(lambda *_: self._set_status(f"[color=ff5555]Error hash: {e}[/color]"))
+            Clock.schedule_once(lambda *_, err=e: self._set_status(f"[color=ff5555]Error hash: {err}[/color]"))
 
     def _set_hash_ok(self, hexd):
         self.lbl_hash.text = f"[b]SHA-256:[/b] {hexd}"
@@ -110,7 +110,7 @@ class AnchorWidget(BoxLayout):
             msg = f"[b]HASH[/b] {res['fileHash']}  [b]TX[/b] {res['txHash']}  [b]BLK[/b] {res['block']}"
             Clock.schedule_once(lambda *_: self._set_status(f"[color=5cb85c]✓ Anclado: {msg}[/color]"))
         except Exception as e:
-            Clock.schedule_once(lambda *_: self._set_status(f"[color=ff5555]Error anclando: {e}[/color]"))
+            Clock.schedule_once(lambda *_, err=e: self._set_status(f"[color=ff5555]Error anclando: {err}[/color]"))
 
     def _transfer_async(self):
         if not self.service:
@@ -129,7 +129,7 @@ class AnchorWidget(BoxLayout):
             msg = f"[b]HASH[/b] {res['fileHash']}  [b]TO[/b] {res['to']}  [b]TX[/b] {res['txHash']}  [b]BLK[/b] {res['block']}"
             Clock.schedule_once(lambda *_: self._set_status(f"[color=5cb85c]✓ Transferido: {msg}[/color]"))
         except Exception as e:
-            Clock.schedule_once(lambda *_: self._set_status(f"[color=ff5555]Error transfiriendo: {e}[/color]"))
+            Clock.schedule_once(lambda *_, err=e: self._set_status(f"[color=ff5555]Error transfiriendo: {err}[/color]"))
 
     def _verify_async(self):
         if not self.service:
@@ -148,6 +148,9 @@ class AnchorWidget(BoxLayout):
             else:
                 Clock.schedule_once(lambda *_: self._set_status("[color=ff5555]NO REGISTRADA[/color]"))
         except Exception as e:
-            Clock.schedule_once(lambda *_: self._set_status(f"[color=ff5555]Error verificando: {e}[/color]"))
+            Clock.schedule_once(lambda *_, err=e: self._set_status(f"[color=ff5555]Error verificando: {err}[/color]"))
 
-    def _set_status(self, txt): self.lbl_status.text = txt
+    def _set_status(self, txt):
+        self.lbl_status.text = txt
+
+
