@@ -6,6 +6,27 @@ from web3 import Web3
 from eth_account import Account
 from hexbytes import HexBytes
 
+# --- Excepciones de dominio más amigables ---
+class DuplicateHashError(Exception):
+    """El hash ya está registrado en el contrato."""
+    pass
+
+class NotOwnerError(Exception):
+    """No eres el propietario actual de este hash."""
+    pass
+
+class InvalidRecipientError(Exception):
+    """La dirección de destino no es válida (cero o formato incorrecto)."""
+    pass
+
+
+def _owner_is_zero(owner: str) -> bool:
+    # owner llega como '0x...' en hex; consideramos no registrado si es 0
+    try:
+        return int(owner, 16) == 0
+    except Exception:
+        return True
+
 DEFAULT_RPC = "http://127.0.0.1:8545"
 DEFAULT_CHAIN_ID = 1337
 CHUNK_SIZE = 1024 * 1024
@@ -26,10 +47,10 @@ class AnchorConfig:
     rpc_url: str = DEFAULT_RPC
     contract_address: str = ""          # 0x...
     abi_path: str = "build/contracts/PhotoRegistry.json"
-    private_key: Optional[str] = None   # SOLO dev (en prod: signer/keystore)
+    private_key: Optional[str] = ""   # SOLO dev (en prod: signer/keystore)
     chain_id: int = DEFAULT_CHAIN_ID
-    gas: int = 2000000000
-    gas_price_gwei: Optional[float] = None  # si tu Ganache no admite gasPrice, pon None
+    gas: int = 200000
+    gas_price_gwei: Optional[float] = None  # si tu Ganache no admite gasPrice, pon Nones
 
 class AnchorService:
     def __init__(self, cfg: AnchorConfig):
@@ -70,11 +91,24 @@ class AnchorService:
     def anchor(self, file_path: str):
         if not self.cfg.private_key:
             raise RuntimeError("Falta private_key (solo dev).")
+
         hexd = sha256_file(file_path)
         h32 = "0x" + hexd
         acct = Account.from_key(self.cfg.private_key)
 
-        # v5: buildTransaction + getTransactionCount + chainId
+        # --- 1) Pre-chequeo: evita mandar la tx si ya está anclado ---
+        try:
+            owner, _ts = self.contract.functions.claims(h32).call()
+            if not _owner_is_zero(owner):
+                # Lanzamos una excepción clara y corta
+                raise DuplicateHashError("Hash ya registrado: esta transacción ya se ejecutó anteriormente.")
+        except DuplicateHashError:
+            raise
+        except Exception:
+            # Si falla la lectura por alguna razón, continuamos y dejamos que on-chain decida
+            pass
+
+        # --- 2) Construcción y envío de la transacción ---
         tx = self.contract.functions.anchor(h32).buildTransaction({
             "from": acct.address,
             "nonce": self.w3.eth.getTransactionCount(acct.address),
@@ -83,9 +117,21 @@ class AnchorService:
         })
         self._maybe_set_gas_price(tx)
 
-        signed = acct.signTransaction(tx)
-        txh = self.w3.eth.sendRawTransaction(signed.rawTransaction)
-        rc = self.w3.eth.waitForTransactionReceipt(txh)
+        try:
+            signed = acct.signTransaction(tx)
+            txh = self.w3.eth.sendRawTransaction(signed.rawTransaction)
+            rc = self.w3.eth.waitForTransactionReceipt(txh)
+        except Exception as e:
+            # Traducción de revert a mensaje humano
+            msg = str(e)
+            # Clientes que exponen el nombre del error personalizado (Ganache/Hardhat a veces lo hacen)
+            if "AlreadyClaimed" in msg or "already claimed" in msg.lower():
+                raise DuplicateHashError("Hash ya registrado: esta transacción ya se ejecutó anteriormente.") from e
+            # Reverts genéricas
+            if "execution reverted" in msg.lower() or "revert" in msg.lower():
+                raise RuntimeError(
+                    "La transacción fue revertida por el contrato (verifica si el hash ya estaba anclado).") from e
+            raise
 
         return {
             "fileHash": h32,
@@ -106,34 +152,45 @@ class AnchorService:
             "registered": registered,
         }
 
-    def transfer_by_file(self, file_path: str, new_owner: str):
-        if not self.cfg.private_key:
-            raise RuntimeError("Falta private_key (solo dev).")
-        if not (new_owner.startswith("0x") and len(new_owner) == 42):
-            raise RuntimeError("Dirección destino inválida.")
+def transfer_by_file(self, file_path: str, new_owner: str):
+    if not self.cfg.private_key:
+        raise RuntimeError("Falta private_key (solo dev).")
+    if not (new_owner.startswith("0x") and len(new_owner) == 42):
+        raise RuntimeError("Dirección destino inválida.")
 
-        hexd = sha256_file(file_path)
-        h32 = "0x" + hexd
-        acct = Account.from_key(self.cfg.private_key)
+    hexd = sha256_file(file_path)
+    h32 = "0x" + hexd
+    acct = Account.from_key(self.cfg.private_key)
 
-        tx = self.contract.functions.transferOwner(h32, new_owner).buildTransaction({
-            "from": acct.address,
-            "nonce": self.w3.eth.getTransactionCount(acct.address),
-            "gas": self.cfg.gas,
-            "chainId": self.cfg.chain_id,
-        })
-        self._maybe_set_gas_price(tx)
+    tx = self.contract.functions.transferOwner(h32, new_owner).buildTransaction({
+        "from": acct.address,
+        "nonce": self.w3.eth.getTransactionCount(acct.address),
+        "gas": self.cfg.gas,
+        "chainId": self.cfg.chain_id,
+    })
+    self._maybe_set_gas_price(tx)
 
+    try:
         signed = acct.signTransaction(tx)
         txh = self.w3.eth.sendRawTransaction(signed.rawTransaction)
         rc = self.w3.eth.waitForTransactionReceipt(txh)
+    except Exception as e:
+        msg = str(e)
+        if "NotOwner" in msg or "not owner" in msg.lower():
+            raise NotOwnerError("No eres el propietario actual del hash; no puedes transferirlo.") from e
+        if "InvalidRecipient" in msg or "invalid recipient" in msg.lower():
+            raise InvalidRecipientError("Dirección destino inválida (probablemente dirección cero).") from e
+        if "execution reverted" in msg.lower() or "revert" in msg.lower():
+            raise RuntimeError("La transacción fue revertida por el contrato (verifica permisos y datos).") from e
+        raise
 
-        return {
-            "fileHash": h32,
-            "to": new_owner,
-            "txHash": txh.hex(),
-            "block": rc.blockNumber,
-        }
+    return {
+        "fileHash": h32,
+        "to": new_owner,
+        "txHash": txh.hex(),
+        "block": rc.blockNumber,
+    }
+
 
 
 

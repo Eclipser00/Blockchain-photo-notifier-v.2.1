@@ -6,6 +6,7 @@ from kivy.uix.filechooser import FileChooserIconView
 from kivy.uix.popup import Popup
 from kivy.uix.textinput import TextInput
 from kivy.clock import Clock
+from .service import DuplicateHashError
 
 import threading
 from .service import AnchorConfig, AnchorService
@@ -109,6 +110,8 @@ class AnchorWidget(BoxLayout):
             res = self.service.anchor(self.selected_path)
             msg = f"[b]HASH[/b] {res['fileHash']}  [b]TX[/b] {res['txHash']}  [b]BLK[/b] {res['block']}"
             Clock.schedule_once(lambda *_: self._set_status(f"[color=5cb85c]✓ Anclado: {msg}[/color]"))
+        except DuplicateHashError as e:
+            Clock.schedule_once(lambda *_, err=e: self._set_status(f"[color=ffae42]⚠: {err}[/color]"))
         except Exception as e:
             Clock.schedule_once(lambda *_, err=e: self._set_status(f"[color=ff5555]Error anclando: {err}[/color]"))
 
