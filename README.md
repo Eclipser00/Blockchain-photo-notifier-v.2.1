@@ -26,6 +26,32 @@ C) Comprobar que la firma ECDSA del hash corresponde a esa address (si incluyes 
 
 D) (Opcional) Vincular esa address a tu identidad (ENS / web con firma / acta notarial) => Si A, B y C pasan: integridad + control; con D: atribución a tu persona.
 
+### COMANDOS PARA BROWNIE:
+
+Para crear contrato nuevo y obtener direccion de contrato, automaticamente el 
+programa lo copia en .env
+
+    brownie run scripts/deploy.py
+
+Para realizar los test en ganache.
+
+    brownie test
+
+Solo en caso de reiniciar todo el programa desde cero....
+Para crear el contrato, tener configurado brownie-config.yaml
+Desde una carpeta vaca, /Contract
+
+    brownie init
+
+Esto crea las carpetas del framework, guardamos scripts/deploy.py, 
+tests/test_smoke.py, tests/test_phot_resgistry.py
+y compilamos
+
+    brownie compile
+
+Con esto ya tendremos Contract/build/contracts/PhotRegistry.json, necesario
+para ejecutar, es donde se guardan los datos del contrato...
+
 Python 3.9 pip
 
 Licencia: CC BY-NC 4.0 – No se permite el uso comercial de este software.
