@@ -1,9 +1,7 @@
 # brownie-config.yaml
 # Colócalo en la raíz del proyecto Brownie, junto a contracts/, scripts/, tests/
 
-# Claves y variables directamente aquí (no subir a repositorios públicos)
-private_key: "TU_CLAVE_PRIVADA"
-infura_project_id: "TU_INFURA_PROJECT_ID"
+dotenv: .env
 
 compiler:
   solc:
@@ -14,7 +12,7 @@ compiler:
 
 networks:
   development:
-    gas_price: 2000000000
+    gas_price: 200000
     host: http://127.0.0.1:8545
     chainid: 1337
 
