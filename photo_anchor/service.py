@@ -152,44 +152,6 @@ class AnchorService:
             "registered": registered,
         }
 
-def transfer_by_file(self, file_path: str, new_owner: str):
-    if not self.cfg.private_key:
-        raise RuntimeError("Falta private_key (solo dev).")
-    if not (new_owner.startswith("0x") and len(new_owner) == 42):
-        raise RuntimeError("Dirección destino inválida.")
-
-    hexd = sha256_file(file_path)
-    h32 = "0x" + hexd
-    acct = Account.from_key(self.cfg.private_key)
-
-    tx = self.contract.functions.transferOwner(h32, new_owner).buildTransaction({
-        "from": acct.address,
-        "nonce": self.w3.eth.getTransactionCount(acct.address),
-        "gas": self.cfg.gas,
-        "chainId": self.cfg.chain_id,
-    })
-    self._maybe_set_gas_price(tx)
-
-    try:
-        signed = acct.signTransaction(tx)
-        txh = self.w3.eth.sendRawTransaction(signed.rawTransaction)
-        rc = self.w3.eth.waitForTransactionReceipt(txh)
-    except Exception as e:
-        msg = str(e)
-        if "NotOwner" in msg or "not owner" in msg.lower():
-            raise NotOwnerError("No eres el propietario actual del hash; no puedes transferirlo.") from e
-        if "InvalidRecipient" in msg or "invalid recipient" in msg.lower():
-            raise InvalidRecipientError("Dirección destino inválida (probablemente dirección cero).") from e
-        if "execution reverted" in msg.lower() or "revert" in msg.lower():
-            raise RuntimeError("La transacción fue revertida por el contrato (verifica permisos y datos).") from e
-        raise
-
-    return {
-        "fileHash": h32,
-        "to": new_owner,
-        "txHash": txh.hex(),
-        "block": rc.blockNumber,
-    }
 
 
 

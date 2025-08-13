@@ -37,17 +37,13 @@ class AnchorWidget(BoxLayout):
         btn_anchor = Button(text="Anclar (Ganache)", size_hint_y=None, height=48)
         btn_anchor.bind(on_release=lambda *_: self._anchor_async())
 
-        self.dest_input = TextInput(text="", hint_text="0x... destinatario", size_hint_y=None, height=44)
-        btn_transfer = Button(text="Transferir propiedad", size_hint_y=None, height=48)
-        btn_transfer.bind(on_release=lambda *_: self._transfer_async())
-
         btn_verify = Button(text="Verificar", size_hint_y=None, height=48)
         btn_verify.bind(on_release=lambda *_: self._verify_async())
 
         self.lbl_status = Label(text="", markup=True)
 
         for w in [self.rpc_label, self.addr_input, btn_connect, btn_choose, self.lbl_path, self.lbl_hash,
-                  btn_hash, btn_anchor, self.dest_input, btn_transfer, btn_verify, self.lbl_status]:
+                  btn_hash, btn_anchor, btn_verify, self.lbl_status]:
             self.add_widget(w)
 
     # --- helpers UI ---
@@ -114,25 +110,6 @@ class AnchorWidget(BoxLayout):
             Clock.schedule_once(lambda *_, err=e: self._set_status(f"[color=ffae42]⚠: {err}[/color]"))
         except Exception as e:
             Clock.schedule_once(lambda *_, err=e: self._set_status(f"[color=ff5555]Error anclando: {err}[/color]"))
-
-    def _transfer_async(self):
-        if not self.service:
-            self._set_status("[color=ffae42]Conecta el contrato primero[/color]"); return
-        if not self.selected_path:
-            self._set_status("[color=ffae42]Elige un archivo primero[/color]"); return
-        to = self.dest_input.text.strip()
-        if not (to.startswith("0x") and len(to) == 42):
-            self._set_status("[color=ffae42]Dirección destino inválida[/color]"); return
-        self._set_status("[color=aaaaaa]Transfiriendo…[/color]")
-        threading.Thread(target=self._transfer_thread, args=(to,), daemon=True).start()
-
-    def _transfer_thread(self, to_addr):
-        try:
-            res = self.service.transfer_by_file(self.selected_path, to_addr)
-            msg = f"[b]HASH[/b] {res['fileHash']}  [b]TO[/b] {res['to']}  [b]TX[/b] {res['txHash']}  [b]BLK[/b] {res['block']}"
-            Clock.schedule_once(lambda *_: self._set_status(f"[color=5cb85c]✓ Transferido: {msg}[/color]"))
-        except Exception as e:
-            Clock.schedule_once(lambda *_, err=e: self._set_status(f"[color=ff5555]Error transfiriendo: {err}[/color]"))
 
     def _verify_async(self):
         if not self.service:
