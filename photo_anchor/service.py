@@ -8,6 +8,7 @@ from typing import Optional, Dict, Any
 from .crypto_sign import (
     ed25519_generate, ed25519_sign_file, ed25519_verify_file
 )
+from .metadata import extract_exif_only, canonical_json
 
 # --- Excepciones de dominio más amigables ---
 class DuplicateHashError(Exception):
@@ -44,6 +45,21 @@ def sha256_file(path: str) -> str:
 def load_abi(artifact_path: str):
     with open(artifact_path, "r", encoding="utf-8") as f:
         return json.load(f)["abi"]
+
+def sha256_file_with_exif(path: str) -> str:
+    """
+    SHA-256( bytes_del_archivo || canonical_json(EXIF) )
+    Nota: si no hay EXIF, el JSON es {}, y el hash se basa en (bytes || "{}").
+    """
+    h = hashlib.sha256()
+    # 1) bytes del archivo (píxeles)
+    with open(path, "rb") as f:
+        for chunk in iter(lambda: f.read(CHUNK_SIZE), b""):
+            h.update(chunk)
+    # 2) EXIF canónico
+    exif = extract_exif_only(path)
+    h.update(canonical_json(exif).encode("utf-8"))
+    return h.hexdigest()
 
 @dataclass
 class AnchorConfig:
@@ -104,11 +120,11 @@ class AnchorService:
                 # Nodo no acepta gasPrice (solo EIP-1559). Déjalo sin gasPrice.
                 pass
 
-    def anchor(self, file_path: str):
+    def anchor(self, file_path: str, use_exif: bool = True):
         if not self.cfg.private_key:
             raise RuntimeError("Falta private_key (solo dev).")
 
-        hexd = sha256_file(file_path)
+        hexd = sha256_file_with_exif(file_path) if use_exif else sha256_file(file_path)
         h32 = "0x" + hexd
         acct = Account.from_key(self.cfg.private_key)
 
@@ -156,8 +172,8 @@ class AnchorService:
             "address": acct.address,
         }
 
-    def verify(self, file_path: str):
-        hexd = sha256_file(file_path)
+    def verify(self, file_path: str, use_exif: bool = True):
+        hexd = sha256_file_with_exif(file_path) if use_exif else sha256_file(file_path)
         h32 = "0x" + hexd
         owner, ts = self.contract.functions.claims(h32).call()
         registered = int(owner, 16) != 0

@@ -9,6 +9,8 @@ from kivy.clock import Clock
 from .service import DuplicateHashError
 import os
 import json
+from .service import sha256_file_with_exif
+from .metadata import extract_exif_only
 
 import threading
 from .service import AnchorConfig, AnchorService
@@ -23,6 +25,7 @@ class AnchorWidget(BoxLayout):
         self.service = None
         self.selected_path = None
         self.current_hash = None
+        self.last_exif = None
         self.selected_sig_path = None  # para verificar firma
         # RPC label shown at the top
         self.rpc_label = Label(text=f"[b]RPC:[/b] {self.cfg.rpc_url}", markup=True, size_hint_y=None, height=24)
@@ -109,7 +112,31 @@ class AnchorWidget(BoxLayout):
             self.lbl_path.text = f"[b]Archivo:[/b] {self.selected_path}"
             self.lbl_hash.text = "[i]Hash pendiente[/i]"
             self.current_hash = None
+            self.last_exif = None
+            self._load_exif_async()
         pop.dismiss()
+
+    def _load_exif_async(self):
+        """Extrae EXIF en segundo plano y lo muestra en la consola."""
+        self._set_status("[color=aaaaaa]Leyendo metadatos EXIF…[/color]")
+        threading.Thread(target=self._load_exif_thread, daemon=True).start()
+
+    def _load_exif_thread(self):
+        try:
+            exif = extract_exif_only(self.selected_path) if self.selected_path else {}
+            self.last_exif = exif or {}
+            # Mensaje corto (primeras claves)
+            if self.last_exif:
+                # muestra hasta 8 pares clave:valor
+                items = list(self.last_exif.items())[:8]
+                resumen = "\n".join([f"{k}: {v}" for k, v in items])
+                msg = "[b]METADATOS detectados (preview):[/b]\n" + resumen + (
+                    "\n… (ver completo)" if len(self.last_exif) > 8 else "")
+            else:
+                msg = "No se encontraron metadatos EXIF."
+            Clock.schedule_once(lambda *_: self._set_status(msg))
+        except Exception as e:
+            Clock.schedule_once(lambda *_, err=e: self._set_status(f"[color=ff5555]Error leyendo EXIF: {err}[/color]"))
 
     def _compute_hash_async(self):
         if not self.selected_path:
@@ -118,9 +145,8 @@ class AnchorWidget(BoxLayout):
         threading.Thread(target=self._compute_hash_thread, daemon=True).start()
 
     def _compute_hash_thread(self):
-        from .service import sha256_file
         try:
-            hexd = sha256_file(self.selected_path)
+            hexd = sha256_file_with_exif(self.selected_path)
             self.current_hash = hexd
             Clock.schedule_once(lambda *_: self._set_hash_ok(hexd))
         except Exception as e:
@@ -142,7 +168,7 @@ class AnchorWidget(BoxLayout):
 
     def _anchor_thread(self):
         try:
-            res = self.service.anchor(self.selected_path)
+            res = self.service.anchor(self.selected_path, use_exif=True)
             msg = f"[b]HASH[/b] {res['fileHash']}  [b]TX[/b] {res['txHash']}  [b]BLK[/b] {res['block']}"
             Clock.schedule_once(lambda *_: self._set_status(f"[color=5cb85c]✓ Anclado: {msg}[/color]"))
         except DuplicateHashError as e:
@@ -160,7 +186,7 @@ class AnchorWidget(BoxLayout):
 
     def _verify_thread(self):
         try:
-            res = self.service.verify(self.selected_path)
+            res = self.service.verify(self.selected_path, use_exif=True)
             if res["registered"]:
                 msg = f"[b]HASH[/b] {res['fileHash']}  [b]OWNER[/b] {res['owner']}  [b]TS[/b] {res['timestamp']}"
                 Clock.schedule_once(lambda *_: self._set_status(f"[color=5cb85c]✓ VERIFICADA: {msg}[/color]"))
@@ -201,12 +227,14 @@ class AnchorWidget(BoxLayout):
 
     def _sign_thread(self):
         try:
-            env = self.service.sign_file_offchain(self.selected_path)  # dict
+            from .crypto_sign import ed25519_sign_file_with_exif
+            env = ed25519_sign_file_with_exif(self.selected_path, self.service._signer_priv_pem)
             out_path = self.selected_path + ".sig.json"
+            import json
             with open(out_path, "w", encoding="utf-8") as f:
                 json.dump(env, f, ensure_ascii=False, indent=2)
             Clock.schedule_once(lambda *_: self._set_status(
-                f"[color=5cb85c]✓ Firma creada[/color]\n[b]Hash:[/b] {env['fileHash']}\n[b]Sig:[/b] {out_path}"))
+                f"[color=5cb85c]✓ Firma creada[/color]\n[b]Hash combinado:[/b] {env['fileHash']}"))
         except Exception as e:
             Clock.schedule_once(lambda *_, err=e: self._set_status(f"[color=ff5555]Error firmando: {err}[/color]"))
 
@@ -235,13 +263,14 @@ class AnchorWidget(BoxLayout):
     def _verify_sig_thread(self):
         try:
             env = json.load(open(self.selected_sig_path, "r", encoding="utf-8"))
-            res = self.service.verify_file_offchain(self.selected_path, env)
+            from .crypto_sign import ed25519_verify_file_with_exif
+            res = ed25519_verify_file_with_exif(self.selected_path, self.service._signer_pub_pem, env)
             if res.get("ok"):
                 Clock.schedule_once(lambda *_: self._set_status(
                     f"[color=5cb85c]✓ Firma válida[/color]\n[b]Hash:[/b] {res['fileHash']}  [b]Alg:[/b] {res['algorithm']}"))
             else:
-                Clock.schedule_once(
-                    lambda *_: self._set_status(f"[color=ff5555]Firma inválida[/color]\n{res.get('reason', '')}"))
+                Clock.schedule_once(lambda *_: self._set_status(
+                    f"[color=ff5555]Firma inválida[/color]\n{res.get('reason', '')}"))
         except Exception as e:
             Clock.schedule_once(lambda *_, err=e: self._set_status(f"[color=ff5555]Error verificando firma: {err}[/color]"))
 
