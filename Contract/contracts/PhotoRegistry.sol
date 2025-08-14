@@ -18,11 +18,4 @@ contract PhotoRegistry {
         emit Anchored(fileHash, msg.sender, block.timestamp);
     }
 
-    function transferOwner(bytes32 fileHash, address newOwner) external {
-        address curr = claims[fileHash].owner;
-        if (msg.sender != curr) revert NotOwner();
-        if (newOwner == address(0)) revert InvalidRecipient();
-        claims[fileHash].owner = newOwner;
-        emit Transferred(fileHash, curr, newOwner, block.timestamp);
-    }
 }
