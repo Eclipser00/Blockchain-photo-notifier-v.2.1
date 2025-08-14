@@ -1,10 +1,13 @@
 # photo_anchor/service.py
 import os, json, hashlib
 from dataclasses import dataclass
-from typing import Optional
 from web3 import Web3
 from eth_account import Account
 from hexbytes import HexBytes
+from typing import Optional, Dict, Any
+from .crypto_sign import (
+    ed25519_generate, ed25519_sign_file, ed25519_verify_file
+)
 
 # --- Excepciones de dominio más amigables ---
 class DuplicateHashError(Exception):
@@ -51,6 +54,11 @@ class AnchorConfig:
     chain_id: int = DEFAULT_CHAIN_ID
     gas: int = 200000
     gas_price_gwei: Optional[float] = None  # si tu Ganache no admite gasPrice, pon Nones
+    # Algoritmo de firma off-chain por defecto (robusto y práctico):
+    signing_algorithm: str = "ed25519"
+    # Rutas (opcional) a los PEM del firmante/verificador
+    signer_private_pem_path: Optional[str] = None
+    signer_public_pem_path: Optional[str] = None
 
 class AnchorService:
     def __init__(self, cfg: AnchorConfig):
@@ -74,6 +82,14 @@ class AnchorService:
         abi = contract_json["abi"]
 
         self.contract = self.w3.eth.contract(address=addr, abi=abi)
+
+        # === Firma off-chain: carga perezosa de PEM si existen ===
+        self._signer_priv_pem: Optional[bytes] = None
+        self._signer_pub_pem: Optional[bytes] = None
+        if self.cfg.signer_private_pem_path and os.path.exists(self.cfg.signer_private_pem_path):
+            self._signer_priv_pem = open(self.cfg.signer_private_pem_path, "rb").read()
+        if self.cfg.signer_public_pem_path and os.path.exists(self.cfg.signer_public_pem_path):
+            self._signer_pub_pem = open(self.cfg.signer_public_pem_path, "rb").read()
 
     def _maybe_set_gas_price(self, tx: dict):
         """
@@ -151,6 +167,51 @@ class AnchorService:
             "timestamp": ts,
             "registered": registered,
         }
+
+    # ================== OFF-CHAIN (Ed25519) ==================
+
+    def generate_signing_keys_if_needed(self, out_priv_path: str, out_pub_path: str) -> Dict[str, str]:
+        """
+        Genera y persiste un par Ed25519 si aún no existen en disco/cfg.
+        """
+        if self._signer_priv_pem and self._signer_pub_pem:
+            return {"private_pem": self.cfg.signer_private_pem_path or "",
+                    "public_pem": self.cfg.signer_public_pem_path or ""}
+
+        kp = ed25519_generate()
+        os.makedirs(os.path.dirname(out_priv_path) or ".", exist_ok=True)
+        with open(out_priv_path, "wb") as f:
+            f.write(kp.private_pem)
+        with open(out_pub_path, "wb") as f:
+            f.write(kp.public_pem)
+
+        self._signer_priv_pem = kp.private_pem
+        self._signer_pub_pem = kp.public_pem
+        self.cfg.signer_private_pem_path = out_priv_path
+        self.cfg.signer_public_pem_path = out_pub_path
+        return {"private_pem": out_priv_path, "public_pem": out_pub_path}
+
+    def sign_file_offchain(self, file_path: str) -> Dict[str, Any]:
+        """
+        Firma el SHA-256 del archivo con la clave privada Ed25519 cargada.
+        """
+        if self.cfg.signing_algorithm != "ed25519":
+            raise RuntimeError(f"Algoritmo no soportado aún: {self.cfg.signing_algorithm}")
+        if not self._signer_priv_pem:
+            raise RuntimeError(
+                "No hay clave privada Ed25519 cargada. Genera claves o configura signer_private_pem_path.")
+        return ed25519_sign_file(file_path, self._signer_priv_pem)
+
+    def verify_file_offchain(self, file_path: str, signature_envelope: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Verifica la firma Ed25519 del hash con la clave pública Ed25519 cargada.
+        """
+        if self.cfg.signing_algorithm != "ed25519":
+            raise RuntimeError(f"Algoritmo no soportado aún: {self.cfg.signing_algorithm}")
+        if not self._signer_pub_pem:
+            raise RuntimeError(
+                "No hay clave pública Ed25519 cargada. Genera claves o configura signer_public_pem_path.")
+        return ed25519_verify_file(file_path, self._signer_pub_pem, signature_envelope)
 
 
 
