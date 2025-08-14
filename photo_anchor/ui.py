@@ -16,63 +16,86 @@ from .service import AnchorConfig, AnchorService
 class AnchorWidget(BoxLayout):
     def __init__(self, cfg: AnchorConfig, **kwargs):
         super().__init__(orientation="vertical", spacing=8, padding=12, **kwargs)
+        # Clear any pre-existing private key so the user must enter it manually
         self.cfg = cfg
+        self.cfg.private_key = ""
+        # State variables
         self.service = None
         self.selected_path = None
         self.current_hash = None
         self.selected_sig_path = None  # para verificar firma
-
-        self.addr_input = TextInput(text=self.cfg.contract_address.strip() or "", hint_text="0x... contrato", size_hint_y=None, height=44)
+        # RPC label shown at the top
         self.rpc_label = Label(text=f"[b]RPC:[/b] {self.cfg.rpc_url}", markup=True, size_hint_y=None, height=24)
-
-        btn_connect = Button(text="Conectar contrato", size_hint_y=None, height=48)
-        btn_connect.bind(on_release=self._connect)
-
+        # Text input for the Ethereum private key (hidden input)
+        self.priv_input = TextInput(text="", hint_text="Clave privada (0x…)", size_hint_y=None, height=44, password=True)
+        self.priv_input.bind(text=self._update_private_key)
+        # Button to choose an image file
         btn_choose = Button(text="Elegir foto…", size_hint_y=None, height=48)
         btn_choose.bind(on_release=self._open_file_chooser)
-
+        # Labels for selected path and hash
         self.lbl_path = Label(text="[i]Sin archivo seleccionado[/i]", markup=True, size_hint_y=None, height=24)
         self.lbl_hash = Label(text="[i]Hash pendiente[/i]", markup=True, size_hint_y=None, height=24)
-
+        # Button to compute SHA-256 hash
         btn_hash = Button(text="Calcular hash", size_hint_y=None, height=44)
         btn_hash.bind(on_release=lambda *_: self._compute_hash_async())
-
+        # Off-chain buttons: generate keys, sign, verify signature
+        btn_keys = Button(text="Crear claves (keys)", size_hint_y=None, height=44)
+        btn_keys.bind(on_release=lambda *_: self._gen_keys_async())
+        btn_sign = Button(text="Firmar (Ed25519)", size_hint_y=None, height=44)
+        btn_sign.bind(on_release=lambda *_: self._sign_async())
+        btn_verify_sig = Button(text="Verificar firma", size_hint_y=None, height=44)
+        btn_verify_sig.bind(on_release=lambda *_: self._verify_sig_async())
+        # On-chain anchor and verify buttons
         btn_anchor = Button(text="Anclar (Ganache)", size_hint_y=None, height=48)
         btn_anchor.bind(on_release=lambda *_: self._anchor_async())
-
         btn_verify = Button(text="Verificar", size_hint_y=None, height=48)
         btn_verify.bind(on_release=lambda *_: self._verify_async())
-
-        # === NUEVOS BOTONES OFF-CHAIN ===
-        btn_keys = Button(text="Crear claves (keys)", size_hint_y=None, height=44);
-        btn_keys.bind(on_release=lambda *_: self._gen_keys_async())
-        btn_sign = Button(text="Firmar (Ed25519)", size_hint_y=None, height=44);
-        btn_sign.bind(on_release=lambda *_: self._sign_async())
-        btn_verify_sig = Button(text="Verificar firma", size_hint_y=None, height=44);
-        btn_verify_sig.bind(on_release=lambda *_: self._verify_sig_async())
-
+        # Status label for feedback messages
         self.lbl_status = Label(text="", markup=True)
-
-        for w in [self.rpc_label, self.addr_input, btn_connect, btn_choose, self.lbl_path, self.lbl_hash,
-                  btn_hash, btn_anchor,btn_keys, btn_sign, btn_verify_sig, btn_verify, self.lbl_status]:
+        # Add widgets in the desired order
+        for w in [self.rpc_label, btn_keys, btn_choose, self.lbl_path, self.lbl_hash, btn_hash, btn_sign, btn_verify_sig, self.priv_input, btn_anchor, btn_verify, self.lbl_status]:
             self.add_widget(w)
+        # Automatically attempt to connect to the contract
+        self._auto_connect()
 
     # --- helpers UI ---
-    def _connect(self, *_):
-        addr = self.addr_input.text.strip()
-        if not (addr.startswith("0x") and len(addr) == 42):
-            self._set_status("[color=ff5555]Dirección de contrato inválida[/color]"); return
-        self.cfg.contract_address = addr
-
-        # (opcional) setea rutas por defecto de PEM si no existen
-        self.cfg.signer_private_pem_path = self.cfg.signer_private_pem_path or os.path.join("keys","author_private.pem")
+    def _auto_connect(self) -> None:
+        """
+        Automatically connect to the deployed smart contract using the address
+        stored in the configuration.  Connection status is displayed in the UI
+        and logged to the console.  This method sets up default PEM paths if
+        none are provided and validates the contract address before attempting
+        the connection.
+        """
+        addr = self.cfg.contract_address.strip()
+        # Set default PEM paths for off‑chain signing if they are not already set
+        self.cfg.signer_private_pem_path = self.cfg.signer_private_pem_path or os.path.join("keys", "author_private.pem")
         self.cfg.signer_public_pem_path = self.cfg.signer_public_pem_path or os.path.join("keys", "author_public.pem")
-
+        # Validate the contract address format
+        if not (addr.startswith("0x") and len(addr) == 42):
+            msg = "[color=ff5555]Dirección de contrato inválida[/color]"
+            self._set_status(msg)
+            print("Dirección de contrato inválida")
+            return
+        # Inform the user that a connection attempt is underway
+        self._set_status("[color=aaaaaa]Conectándose al contrato…[/color]")
         try:
             self.service = AnchorService(self.cfg)
-            self._set_status("[color=5cb85c]✓ Conectado[/color]")
+            self._set_status("[color=5cb85c]✓ Contrato conectado[/color]")
+            print("✓ Conectado")
         except Exception as e:
-            self._set_status(f"[color=ff5555]Error conectando: {e}[/color]")
+            err_msg = f"[color=ff5555]Error conectando: {e}[/color]"
+            self._set_status(err_msg)
+            print(f"Error conectando: {e}")
+
+    def _update_private_key(self, instance, value) -> None:
+        """
+        Update the configuration's private key when the user edits the private
+        key input field.  Leading and trailing whitespace is removed.  The
+        private key is stored only in memory and is not persisted anywhere
+        else.
+        """
+        self.cfg.private_key = value.strip() if value else ""
 
     def _open_file_chooser(self, *_):
         chooser = FileChooserIconView(filters=["*.jpg","*.jpeg","*.png","*.tif","*.tiff","*.heic"])
@@ -109,11 +132,11 @@ class AnchorWidget(BoxLayout):
 
     def _anchor_async(self):
         if not self.service:
-            self._set_status("[color=ffae42]Conecta el contrato primero[/color]"); return
+            self._set_status("[color=ffae42]No se ha conectado al contrato (revisa la consola)[/color]"); return
         if not self.selected_path:
             self._set_status("[color=ffae42]Elige un archivo primero[/color]"); return
         if not self.cfg.private_key:
-            self._set_status("[color=ffae42]Configura private_key (solo dev)[/color]"); return
+            self._set_status("[color=ffae42]Introduce tu clave privada antes de anclar[/color]"); return
         self._set_status("[color=aaaaaa]Enviando tx…[/color]")
         threading.Thread(target=self._anchor_thread, daemon=True).start()
 
@@ -129,7 +152,7 @@ class AnchorWidget(BoxLayout):
 
     def _verify_async(self):
         if not self.service:
-            self._set_status("[color=ffae42]Conecta el contrato primero[/color]"); return
+            self._set_status("[color=ffae42]No se ha conectado al contrato (revisa la consola)[/color]"); return
         if not self.selected_path:
             self._set_status("[color=ffae42]Elige un archivo primero[/color]"); return
         self._set_status("[color=aaaaaa]Verificando…[/color]")
@@ -150,7 +173,7 @@ class AnchorWidget(BoxLayout):
 
     def _gen_keys_async(self):
         if not self.service:
-            self._set_status("[color=ffae42]Conecta el contrato primero[/color]");
+            self._set_status("[color=ffae42]No se ha conectado al contrato (revisa la consola)[/color]");
             return
         self._set_status("[color=aaaaaa]Creando claves Ed25519…[/color]")
         threading.Thread(target=self._gen_keys_thread, daemon=True).start()
@@ -168,7 +191,7 @@ class AnchorWidget(BoxLayout):
 
     def _sign_async(self):
         if not self.service:
-            self._set_status("[color=ffae42]Conecta el contrato primero[/color]");
+            self._set_status("[color=ffae42]No se ha conectado al contrato (revisa la consola)[/color]");
             return
         if not self.selected_path:
             self._set_status("[color=ffae42]Elige un archivo primero[/color]");
@@ -189,7 +212,7 @@ class AnchorWidget(BoxLayout):
 
     def _verify_sig_async(self):
         if not self.service:
-            self._set_status("[color=ffae42]Conecta el contrato primero[/color]");
+            self._set_status("[color=ffae42]No se ha conectado al contrato (revisa la consola)[/color]");
             return
         if not self.selected_path:
             self._set_status("[color=ffae42]Elige primero el archivo a verificar[/color]");
