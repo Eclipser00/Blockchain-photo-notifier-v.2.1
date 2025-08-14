@@ -2,10 +2,13 @@
 Captura in-app o nativa según permisos. - Extracción automática de EXIF, sensores y ID de dispositivo. - Generación de hash SHA-256 y firma digital. - Interacción con Ethereum vía Web3.py. - Notarización on-chain y verificación pública.
 
 ## FLUJO: ()
+[0.5] Conectar contrato
 
 [1] Capturar/seleccionar FOTO (archivo final, sin más ediciones) | v
 
 [2] Calcular HASH SHA-256 del archivo completo | v
+
+[2.5] Crear claves publicas y privadas si no las tenemos.
 
 [3] FIRMAR el hash con tu CLAVE PRIVADA (en keystore / HW wallet) |
 | --> (opcional) Guardar firma + dirección en metadatos XMP v
